@@ -30,7 +30,7 @@ num_classes = 11
 writer = SummaryWriter(os.path.join(ckpt_path, 'exp', exp_name))
 
 args = {
-    'epoch_num': 300,
+    'epoch_num': 100,
     'lr': 1e-3,
     'weight_decay': 1e-3,
     'momentum': 0.95,
@@ -106,8 +106,7 @@ def main(train_args):
     scheduler = MultiStepLR(optimizer, milestones=[15, 30, 45, 60], gamma=0.1)
     for epoch in range(curr_epoch, train_args['epoch_num'] + 1):
         train(train_loader, net, criterion, optimizer, epoch, train_args)
-        val_loss = validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
-        val_loss = validate
+        validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
         scheduler.step()
 
 
@@ -219,7 +218,6 @@ def validate(val_loader, net, criterion, optimizer, epoch, train_args, restore, 
     writer.add_scalar('lr', optimizer.param_groups[1]['lr'], epoch)
 
     net.train()
-    return val_loss.avg
 
 if __name__ == '__main__':
     main(args)
