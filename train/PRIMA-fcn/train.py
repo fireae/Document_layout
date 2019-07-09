@@ -26,6 +26,7 @@ cudnn.benchmark = True
 
 ckpt_path = '../../ckpt'
 exp_name = 'PRIMA-fcn8s'
+num_classes = 11
 writer = SummaryWriter(os.path.join(ckpt_path, 'exp', exp_name))
 
 args = {
@@ -33,16 +34,16 @@ args = {
     'lr': 1e-3,
     'weight_decay': 1e-3,
     'momentum': 0.95,
-    'lr_patience': 100,  # large patience denotes fixed lr
     'snapshot': '',  # empty string denotes learning from scratch
     'print_freq': 10,
     'val_save_to_img_file': False,
     'val_img_sample_rate': 0.1  # randomly sample some validation results to display
 }
 
+
 def main(train_args):
-    net = FCN8s(num_classes=11).cuda()
-    #net = nn.DataParallel(FCN8s(num_classes=11).cuda(), device_ids=[4,5,6,7])
+    net = FCN8s(num_classes).cuda()
+    #net = nn.DataParallel(FCN8s(num_classes).cuda(), device_ids=[4,5,6,7])
     if len(train_args['snapshot']) == 0:
         curr_epoch = 1
         train_args['best_record'] = {'epoch': 0, 'val_loss': 1e10, 'acc': 0, 'acc_cls': 0, 'mean_iu': 0, 'fwavacc': 0}
@@ -101,11 +102,13 @@ def main(train_args):
     check_mkdir(os.path.join(ckpt_path, exp_name))
     open(os.path.join(ckpt_path, exp_name, str(datetime.datetime.now()) + '.txt'), 'w').write(str(train_args) + '\n\n')
 
-    scheduler = ReduceLROnPlateau(optimizer, 'min', patience=train_args['lr_patience'], min_lr=1e-10, verbose=True)
+    # scheduler = ReduceLROnPlateau(optimizer, 'min', patience=train_args['lr_patience'], min_lr=1e-10, verbose=True)
+    scheduler = MultiStepLR(optimizer, milestones=[15, 30, 45, 60], gamma=0.1)
     for epoch in range(curr_epoch, train_args['epoch_num'] + 1):
         train(train_loader, net, criterion, optimizer, epoch, train_args)
         val_loss = validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
-        scheduler.step(val_loss)
+        val_loss = validate
+        scheduler.step()
 
 
 
@@ -122,7 +125,7 @@ def train(train_loader, net, criterion, optimizer, epoch, train_args):
         optimizer.zero_grad()
         outputs = net(inputs)
         assert outputs.size()[2:] == labels.size()[1:]
-        #assert outputs.size()[1] == voc.num_classes
+        #assert outputs.size()[1] == num_classes
 
         loss = criterion(outputs, labels) / N
         loss.backward()
@@ -162,7 +165,7 @@ def validate(val_loader, net, criterion, optimizer, epoch, train_args, restore, 
         gts_all.append(gts.data.squeeze_(0).cpu().numpy())
         predictions_all.append(predictions)
 
-    acc, acc_cls, mean_iu, fwavacc = evaluate(predictions_all, gts_all, voc.num_classes)
+    acc, acc_cls, mean_iu, fwavacc = evaluate(predictions_all, gts_all, num_classes)
 
     if mean_iu > train_args['best_record']['mean_iu']:
         train_args['best_record']['val_loss'] = val_loss.avg
@@ -177,9 +180,9 @@ def validate(val_loader, net, criterion, optimizer, epoch, train_args, restore, 
         torch.save(net.state_dict(), os.path.join(ckpt_path, exp_name, snapshot_name + '.pth'))
         torch.save(optimizer.state_dict(), os.path.join(ckpt_path, exp_name, 'opt_' + snapshot_name + '.pth'))
 
-        if train_args['val_save_to_img_file']:
-            to_save_dir = os.path.join(ckpt_path, exp_name, str(epoch))
-            check_mkdir(to_save_dir)
+        # if train_args['val_save_to_img_file']:
+        #     to_save_dir = os.path.join(ckpt_path, exp_name, str(epoch))
+        #     check_mkdir(to_save_dir)
 
         # val_visual = []
         # for idx, data in enumerate(zip(inputs_all, gts_all, predictions_all)):
