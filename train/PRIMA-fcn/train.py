@@ -20,9 +20,9 @@ from models import *
 from utils import check_mkdir, evaluate, AverageMeter, CrossEntropyLoss2d
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"]="6,7"
+os.environ["CUDA_VISIBLE_DEVICES"]="7"
 
-cudnn.benchmark = False
+cudnn.benchmark = True
 
 ckpt_path = '../../ckpt'
 exp_name = 'PRIMA-fcn8s'
@@ -30,7 +30,7 @@ writer = SummaryWriter(os.path.join(ckpt_path, 'exp', exp_name))
 
 args = {
     'epoch_num': 300,
-    'lr': 1e-4,
+    'lr': 1e-3,
     'weight_decay': 1e-3,
     'momentum': 0.95,
     'lr_patience': 100,  # large patience denotes fixed lr
