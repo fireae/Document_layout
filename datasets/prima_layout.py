@@ -22,13 +22,15 @@ class PRIMA(data.Dataset):
             self.files = open(txt_path).read().splitlines()
 
     def __getitem__(self, index):
-        if self.mode == 'test':
+        if self.mode == 'val':
             img_path = os.path.join(self.img_base_dir, self.files[index])
             mask_path = img_path.replace("Images", "masks").replace("tif", "png")
             img = Image.open(img_path).convert('RGB')
             mask = Image.open(mask_path)
             if self.transform is not None:
                 img = self.transform(img)
+            if self.target_transform is not None:
+                mask = self.target_transform(mask)
             return img, mask
 
         img_path = os.path.join(self.img_base_dir, self.files[index])
