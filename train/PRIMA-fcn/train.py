@@ -19,6 +19,9 @@ from datasets import PRIMA
 from models import *
 from utils import check_mkdir, evaluate, AverageMeter, CrossEntropyLoss2d
 
+import os
+os.environ["CUDA_VISIBLE_DEVICES"]="6,7"
+
 cudnn.benchmark = False
 
 ckpt_path = '../../ckpt'
@@ -27,19 +30,19 @@ writer = SummaryWriter(os.path.join(ckpt_path, 'exp', exp_name))
 
 args = {
     'epoch_num': 300,
-    'lr': 1e-10,
-    'weight_decay': 1e-4,
+    'lr': 1e-4,
+    'weight_decay': 1e-3,
     'momentum': 0.95,
     'lr_patience': 100,  # large patience denotes fixed lr
     'snapshot': '',  # empty string denotes learning from scratch
-    'print_freq': 20,
+    'print_freq': 10,
     'val_save_to_img_file': False,
     'val_img_sample_rate': 0.1  # randomly sample some validation results to display
 }
 
 def main(train_args):
-    net = FCN8s(num_classes=11)
-
+    net = FCN8s(num_classes=11).cuda()
+    #net = nn.DataParallel(FCN8s(num_classes=11).cuda(), device_ids=[4,5,6,7])
     if len(train_args['snapshot']) == 0:
         curr_epoch = 1
         train_args['best_record'] = {'epoch': 0, 'val_loss': 1e10, 'acc': 0, 'acc_cls': 0, 'mean_iu': 0, 'fwavacc': 0}
@@ -57,7 +60,7 @@ def main(train_args):
 
     train_joint_transform = joint_transforms.Compose([
         # joint_transforms.Scale(short_size),
-        joint_transforms.Scale(2000),
+        joint_transforms.Scale(1500),
         # joint_transforms.RandomCrop(args['input_size']),
         joint_transforms.RandomHorizontallyFlip()
     ])
@@ -77,13 +80,9 @@ def main(train_args):
     ])
 
     train_set = PRIMA('train', joint_transform=train_joint_transform, transform=input_transform, target_transform=target_transform)
-    train_loader = DataLoader(train_set, batch_size=1, num_workers=0, shuffle=True)
+    train_loader = DataLoader(train_set, batch_size=1, num_workers=4, shuffle=True)
 
-    it = iter(train_loader)
-    first = next(it)
-    import pdb; pdb.set_trace()
-
-    criterion = CrossEntropyLoss2d(size_average=False).cuda()
+    criterion = CrossEntropyLoss2d(size_average=True).cuda()
     optimizer = optim.Adam([
         {'params': [param for name, param in net.named_parameters() if name[-4:] == 'bias'],
          'lr': 2 * train_args['lr']},
@@ -121,7 +120,7 @@ def train(train_loader, net, criterion, optimizer, epoch, train_args):
         optimizer.zero_grad()
         outputs = net(inputs)
         assert outputs.size()[2:] == labels.size()[1:]
-        assert outputs.size()[1] == voc.num_classes
+        #assert outputs.size()[1] == voc.num_classes
 
         loss = criterion(outputs, labels) / N
         loss.backward()

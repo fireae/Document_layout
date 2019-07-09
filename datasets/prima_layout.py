@@ -13,12 +13,12 @@ class PRIMA(data.Dataset):
         self.transform = transform
         self.target_transform = target_transform
 
-        self.img_base_dir = "/home/intsig/dataset/layout/PRImA Layout Analysis Dataset/Images"
+        self.img_base_dir = "/data/weihong_ma/dataset/PRImA_Layout_Analysis_Dataset/Images"
         if mode=='train':
-            txt_path = '/home/intsig/experiment/exp1_pytorch-semantic-segmentation/train/PRIMA-fcn/train.txt'
+            txt_path = '/data/weihong_ma/experiment/exp1_pytorch-semantic-segmentation/train/PRIMA-fcn/train.txt'
             self.files = open(txt_path).read().splitlines()
         elif mode=='test':
-            txt_path = '/home/intsig/experiment/exp1_pytorch-semantic-segmentation/train/PRIMA-fcn/test.txt'
+            txt_path = '/data/weihong_ma/experiment/exp1_pytorch-semantic-segmentation/train/PRIMA-fcn/test.txt'
             self.files = open(txt_path).read().splitlines()
 
     def __getitem__(self, index):
@@ -39,7 +39,6 @@ class PRIMA(data.Dataset):
 
         if self.joint_transform is not None:
             img, mask = self.joint_transform(img, mask)
-        import pdb; pdb.set_trace()
         if self.sliding_crop is not None:
             img_slices, mask_slices, slices_info = self.sliding_crop(img, mask)
             if self.transform is not None:
