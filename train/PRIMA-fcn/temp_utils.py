@@ -88,12 +88,16 @@ def quantizetopalette(silf, palette, dither=False):
     except AttributeError:
         return silf._makeself(im)
 
-def Pmode(path):
+def RBG2pmode(path):
     palimage = Image.new('P', (16, 16))
     palimage.putpalette(palette)
     oldimage = Image.open(path)
     newimage = quantizetopalette(oldimage, palimage, dither=False)
     newimage.save(path.replace("Masks", "masks"))
+    return
+
+def pmode2RGB(path):
+    
     return
 
 
