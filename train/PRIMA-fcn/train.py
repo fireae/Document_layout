@@ -15,7 +15,6 @@ sys.path.append("../../")
 import utils.transforms as extended_transforms
 import utils.joint_transforms as joint_transforms
 from datasets import PRIMA
-from datasets.prima_layout import colorize_mask
 from models import *
 from utils import check_mkdir, evaluate, AverageMeter, CrossEntropyLoss2d
 
@@ -28,6 +27,8 @@ ckpt_path = '../../ckpt'
 exp_name = 'PRIMA-fcn8s'
 num_classes = 11
 writer = SummaryWriter(os.path.join(ckpt_path, 'exp', exp_name))
+
+palette = init_palette()
 
 args = {
     'epoch_num': 100,
@@ -169,7 +170,6 @@ def validate(val_loader, net, criterion, optimizer, epoch, train_args, restore, 
         predictions_all.append(predictions)
 
 
-
         if train_args['val_save_to_img_file']:
             for i in range(predictions.shape[0]):
                 overlay_mask(restore(inputs[i].cpu()), predictions[i])
@@ -203,8 +203,8 @@ def validate(val_loader, net, criterion, optimizer, epoch, train_args, restore, 
         #     if data[0] is None:
         #         continue
         #     input_pil = restore(data[0])
-        #     gt_pil = voc.colorize_mask(data[1])
-        #     predictions_pil = voc.colorize_mask(data[2])
+        #     gt_pil = colorize_mask(data[1])
+        #     predictions_pil = colorize_mask(data[2])
         #     if train_args['val_save_to_img_file']:
         #         input_pil.save(os.path.join(to_save_dir, '%d_input.png' % idx))
         #         predictions_pil.save(os.path.join(to_save_dir, '%d_prediction.png' % idx))
@@ -239,12 +239,26 @@ def overlay_mask(pilimage, pred):
     for i in range(1,12):
         points = np.where(pred==i)
         points = np.concatenate([points[1][:, np.newaxis], points[0][:, np.newaxis]], 1)
-        import pdb; pdb.set_trace()
-        # rect = cv2.minAreaRect(np.array([points]))
-        # return points clockwise(first point: lowest)
-        # box = np.int0(cv2.boxPoints(rect))
-        # cv2.drawContours(img, [box], -1, [0,0,255], 3)
+        if points.shape[0]>0:
+            mask = np.zeros((img.shape[0], img.shape[1]))
+            cv2.fillPoly(mask, [points], (palette[3*i+2], palette[3*i+1], palette[3*i]))
+            cv2.addWeighted(img, 0.4, mask, 0.1, 0)
+            cv2.imwrite('1.png', img)
     return
+
+def init_palette():
+    palette = [0,0,0, 64,128,64, 128,0,192, 192,128,0, 64,128,0,
+            0,0,128, 128,0,64, 192,0,64, 64,128,192, 128,192,192,
+            128,64,64]
+    zero_pad = 256 * 3 - len(palette)
+    for i in range(zero_pad):
+        palette.append(0)
+    return palette
+
+def colorize_mask(mask):
+    new_mask = Image.fromarray(mask.astype(np.uint8)).convert('P')
+    new_mask.putpalette(palette)
+    return new_mask
 
 if __name__ == '__main__':
     main(args)
