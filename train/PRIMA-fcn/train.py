@@ -28,8 +28,6 @@ exp_name = 'PRIMA-fcn8s'
 num_classes = 11
 writer = SummaryWriter(os.path.join(ckpt_path, 'exp', exp_name))
 
-palette = init_palette()
-
 args = {
     'epoch_num': 100,
     'lr': 1e-4,
@@ -41,6 +39,16 @@ args = {
     'val_img_sample_rate': 0.1  # randomly sample some validation results to display
 }
 
+def init_palette():
+    palette = [0,0,0, 64,128,64, 128,0,192, 192,128,0, 64,128,0,
+            0,0,128, 128,0,64, 192,0,64, 64,128,192, 128,192,192,
+            128,64,64]
+    zero_pad = 256 * 3 - len(palette)
+    for i in range(zero_pad):
+        palette.append(0)
+    return palette
+
+palette = init_palette()
 
 def main(train_args):
     #net = FCN8s(num_classes).cuda()
@@ -245,15 +253,6 @@ def overlay_mask(pilimage, pred):
             cv2.addWeighted(img, 0.4, mask, 0.1, 0)
             cv2.imwrite('1.png', img)
     return
-
-def init_palette():
-    palette = [0,0,0, 64,128,64, 128,0,192, 192,128,0, 64,128,0,
-            0,0,128, 128,0,64, 192,0,64, 64,128,192, 128,192,192,
-            128,64,64]
-    zero_pad = 256 * 3 - len(palette)
-    for i in range(zero_pad):
-        palette.append(0)
-    return palette
 
 def colorize_mask(mask):
     new_mask = Image.fromarray(mask.astype(np.uint8)).convert('P')
