@@ -1,4 +1,4 @@
-import datetime, os, random
+import datetime, os, random, cv2
 from PIL import Image
 
 import torchvision.transforms as standard_transforms
@@ -36,7 +36,7 @@ args = {
     'momentum': 0.95,
     'snapshot': 'epoch_10_loss_0.13471_acc_0.84807_acc-cls_0.31014_mean-iu_0.24598_fwavacc_0.73298_lr_0.0001000000.pth',  # empty string denotes learning from scratch
     'print_freq': 1,
-    'val_save_to_img_file': True,
+    'val_save_to_img_file': False,
     'val_img_sample_rate': 0.1  # randomly sample some validation results to display
 }
 
@@ -108,8 +108,10 @@ def main(train_args):
 
     # scheduler = ReduceLROnPlateau(optimizer, 'min', patience=train_args['lr_patience'], min_lr=1e-10, verbose=True)
     scheduler = MultiStepLR(optimizer, milestones=[15, 30, 45, 60], gamma=0.1)
+
     for epoch in range(curr_epoch, train_args['epoch_num'] + 1):
         validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
+        break
         #train(train_loader, net, criterion, optimizer, epoch, train_args)
         #if epoch%2==0:
         #    validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
@@ -158,6 +160,7 @@ def validate(val_loader, net, criterion, optimizer, epoch, train_args, restore, 
 
         outputs = net(inputs)
         predictions = outputs.data.max(1)[1].squeeze_(1).squeeze_(0).cpu().numpy()
+        import pdb;	pdb.set_trace()
  
         val_loss.update(criterion(outputs, gts).data[0] / N, N)
 
@@ -168,12 +171,12 @@ def validate(val_loader, net, criterion, optimizer, epoch, train_args, restore, 
         gts_all.append(gts.data.squeeze_(0).cpu().numpy())
         predictions_all.append(predictions)
 
-        import pdb; pdb.set_trace()
-        for i in range(predictions.shape[0]):
-            pred_pil = colorize_mask(predictions[i])
-            pred_pil.save('./pred/'+str(vi*predictions.shape[0]+i)+'.png')
-            gt_pil = colorize_mask(gts.data.cpu().numpy()[i])
-            gt_pil.save('./gts/'+str(vi*predictions.shape[0]+i)+'.png')
+        if train_args['val_save_to_img_file']:
+            for i in range(predictions.shape[0]):
+                pred_pil = colorize_mask(predictions[i])
+                pred_pil.save('./pred/'+str(vi*predictions.shape[0]+i)+'.png')
+                gt_pil = colorize_mask(gts.data.cpu().numpy()[i])
+                gt_pil.save('./gts/'+str(vi*predictions.shape[0]+i)+'.png')
 
     acc, acc_cls, mean_iu, fwavacc = evaluate(predictions_all, gts_all, num_classes)
 
