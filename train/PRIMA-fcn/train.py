@@ -8,7 +8,7 @@ from tensorboardX import SummaryWriter
 from torch import optim
 from torch.autograd import Variable
 from torch.backends import cudnn
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau, MultiStepLR
 from torch.utils.data import DataLoader
 
 import sys
@@ -20,7 +20,7 @@ from models import *
 from utils import check_mkdir, evaluate, AverageMeter, CrossEntropyLoss2d
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"]="7"
+os.environ["CUDA_VISIBLE_DEVICES"]="4,5,6,7"
 
 cudnn.benchmark = True
 
@@ -31,19 +31,19 @@ writer = SummaryWriter(os.path.join(ckpt_path, 'exp', exp_name))
 
 args = {
     'epoch_num': 100,
-    'lr': 1e-3,
+    'lr': 1e-4,
     'weight_decay': 1e-3,
     'momentum': 0.95,
     'snapshot': '',  # empty string denotes learning from scratch
-    'print_freq': 10,
+    'print_freq': 1,
     'val_save_to_img_file': False,
     'val_img_sample_rate': 0.1  # randomly sample some validation results to display
 }
 
 
 def main(train_args):
-    net = FCN8s(num_classes).cuda()
-    #net = nn.DataParallel(FCN8s(num_classes).cuda(), device_ids=[4,5,6,7])
+    #net = FCN8s(num_classes).cuda()
+    net = nn.DataParallel(FCN8s(num_classes)).cuda()
     if len(train_args['snapshot']) == 0:
         curr_epoch = 1
         train_args['best_record'] = {'epoch': 0, 'val_loss': 1e10, 'acc': 0, 'acc_cls': 0, 'mean_iu': 0, 'fwavacc': 0}
@@ -62,8 +62,12 @@ def main(train_args):
     train_joint_transform = joint_transforms.Compose([
         # joint_transforms.Scale(short_size),
         joint_transforms.Scale(1500),
-        # joint_transforms.RandomCrop(args['input_size']),
+        joint_transforms.RandomCrop((1500, 1100)),
         joint_transforms.RandomHorizontallyFlip()
+    ])
+    val_joint_transform = joint_transforms.Compose([
+    joint_transforms.Scale(1500),   
+    joint_transforms.RandomCrop((1100, 1500))
     ])
     input_transform = standard_transforms.Compose([
         standard_transforms.ToTensor(),
@@ -81,9 +85,9 @@ def main(train_args):
     ])
 
     train_set = PRIMA('train', joint_transform=train_joint_transform, transform=input_transform, target_transform=target_transform)
-    train_loader = DataLoader(train_set, batch_size=1, num_workers=4, shuffle=True)
-    val_set = voc.VOC('val', transform=input_transform, target_transform=target_transform)
-    val_loader = DataLoader(val_set, batch_size=1, num_workers=4, shuffle=False)
+    train_loader = DataLoader(train_set, batch_size=4, num_workers=4, shuffle=True)
+    val_set = PRIMA('val', joint_transform=val_joint_transform, transform=input_transform, target_transform=target_transform)
+    val_loader = DataLoader(val_set, batch_size=4, num_workers=4, shuffle=False)
 
     criterion = CrossEntropyLoss2d(size_average=True).cuda()
     optimizer = optim.Adam([
@@ -106,10 +110,9 @@ def main(train_args):
     scheduler = MultiStepLR(optimizer, milestones=[15, 30, 45, 60], gamma=0.1)
     for epoch in range(curr_epoch, train_args['epoch_num'] + 1):
         train(train_loader, net, criterion, optimizer, epoch, train_args)
-        validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
+        if epoch%2==0:
+            validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
         scheduler.step()
-
-
 
 def train(train_loader, net, criterion, optimizer, epoch, train_args):
     train_loss = AverageMeter()

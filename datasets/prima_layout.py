@@ -17,31 +17,20 @@ class PRIMA(data.Dataset):
         if mode=='train':
             txt_path = '/data/weihong_ma/experiment/exp1_pytorch-semantic-segmentation/train/PRIMA-fcn/train.txt'
             self.files = open(txt_path).read().splitlines()
-        elif mode=='test':
+        elif mode=='val':
             txt_path = '/data/weihong_ma/experiment/exp1_pytorch-semantic-segmentation/train/PRIMA-fcn/test.txt'
             self.files = open(txt_path).read().splitlines()
 
     def __getitem__(self, index):
-        if self.mode == 'val':
-            img_path = os.path.join(self.img_base_dir, self.files[index])
-            mask_path = img_path.replace("Images", "masks").replace("tif", "png")
-            img = Image.open(img_path).convert('RGB')
-            mask = Image.open(mask_path)
-            if self.transform is not None:
-                img = self.transform(img)
-            if self.target_transform is not None:
-                mask = self.target_transform(mask)
-            return img, mask
-
         img_path = os.path.join(self.img_base_dir, self.files[index])
         mask_path = img_path.replace("Images", "masks").replace("tif", "png")
 
         img = Image.open(img_path).convert('RGB')
         mask = Image.open(mask_path)
-
         if self.joint_transform is not None:
             img, mask = self.joint_transform(img, mask)
-        if self.sliding_crop is not None:
+        
+        if self.sliding_crop is not None and self.mode == 'train':
             img_slices, mask_slices, slices_info = self.sliding_crop(img, mask)
             if self.transform is not None:
                 img_slices = [self.transform(e) for e in img_slices]
