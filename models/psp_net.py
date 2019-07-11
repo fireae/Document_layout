@@ -6,7 +6,7 @@ from torchvision import models
 from utils import initialize_weights
 from utils.misc import Conv2dDeformable
 from .config import res101_path
-
+from .config import res50_path
 
 class _PyramidPoolingModule(nn.Module):
     def __init__(self, in_dim, reduction_dim, setting):
@@ -36,7 +36,8 @@ class PSPNet(nn.Module):
         self.use_aux = use_aux
         resnet = models.resnet101()
         if pretrained:
-            resnet.load_state_dict(torch.load(res101_path))
+            # resnet.load_state_dict(torch.load(res101_path))
+            resnet.load_state_dict(torch.load(res50_path))
         self.layer0 = nn.Sequential(resnet.conv1, resnet.bn1, resnet.relu, resnet.maxpool)
         self.layer1, self.layer2, self.layer3, self.layer4 = resnet.layer1, resnet.layer2, resnet.layer3, resnet.layer4
 

@@ -26,7 +26,7 @@ cudnn.benchmark = True
 
 ckpt_path = '../../ckpt'
 exp_name = 'PRIMA-pspnet-balanced'
-num_classes = 11
+num_classes = 3
 writer = SummaryWriter(os.path.join(ckpt_path, 'exp', exp_name))
 
 args = {
@@ -36,7 +36,7 @@ args = {
     'momentum': 0.95,
     'snapshot': '',  # empty string denotes learning from scratch
     'print_freq': 1,
-    'val_save_to_img_file': True,
+    'val_save_to_img_file': False,
     'val_img_sample_rate': 0.1  # randomly sample some validation results to display
 }
 
@@ -99,7 +99,10 @@ def main(train_args):
     val_set = PRIMA('val', joint_transform=val_joint_transform, transform=input_transform, target_transform=target_transform)
     val_loader = DataLoader(val_set, batch_size=4, num_workers=4, shuffle=False)
 
-    criterion = CrossEntropyLoss2d(size_average=True).cuda()
+    # solved unbalanced distribution
+    weights = [1/6, 2/6, 1/2]
+    cls_weights = torch.FloatTensor(weights).cuda()
+    criterion = CrossEntropyLoss2d(weight=cls_weights, size_average=True).cuda()
     optimizer = optim.Adam([
         {'params': [param for name, param in net.named_parameters() if name[-4:] == 'bias'],
          'lr': 2 * train_args['lr']},
@@ -119,10 +122,10 @@ def main(train_args):
     # scheduler = ReduceLROnPlateau(optimizer, 'min', patience=train_args['lr_patience'], min_lr=1e-10, verbose=True)
     scheduler = MultiStepLR(optimizer, milestones=[15, 30, 45, 60], gamma=0.1)
     for epoch in range(curr_epoch, train_args['epoch_num'] + 1):
-        validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
-        #train(train_loader, net, criterion, optimizer, epoch, train_args)
-        #if epoch%2==0:
-        #    validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
+        #validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
+        train(train_loader, net, criterion, optimizer, epoch, train_args)
+        if epoch%2==0:
+            validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
         #scheduler.step()
 
 def train(train_loader, net, criterion, optimizer, epoch, train_args):
