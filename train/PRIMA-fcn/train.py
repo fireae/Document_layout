@@ -1,4 +1,4 @@
-import datetime, os, random
+import datetime, os, random, cv2
 from PIL import Image
 
 import torchvision.transforms as standard_transforms
@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 
 import sys
 sys.path.append("../../")
+import numpy as np
 import utils.transforms as extended_transforms
 import utils.joint_transforms as joint_transforms
 from datasets import PRIMA
@@ -180,7 +181,8 @@ def validate(val_loader, net, criterion, optimizer, epoch, train_args, restore, 
 
         if train_args['val_save_to_img_file']:
             for i in range(predictions.shape[0]):
-                overlay_mask(restore(inputs[i].cpu()), predictions[i])
+                weighted_img = overlay_mask(restore(inputs[i].cpu()), predictions[i])
+                cv2.imwrite('./vis/'+str(vi*predictions.shape[0]+i)+'.png', weighted_img)
 
             #     pred_pil = colorize_mask(predictions[i])
             #     pred_pil.save('./pred/'+str(vi*predictions.shape[0]+i)+'.png')
@@ -244,15 +246,18 @@ def validate(val_loader, net, criterion, optimizer, epoch, train_args, restore, 
 
 def overlay_mask(pilimage, pred):
     img = np.array(pilimage)
-    for i in range(1,12):
+    weighted_img = None
+    for i in range(12):
         points = np.where(pred==i)
         points = np.concatenate([points[1][:, np.newaxis], points[0][:, np.newaxis]], 1)
         if points.shape[0]>0:
-            mask = np.zeros((img.shape[0], img.shape[1]))
+            mask = np.ones((img.shape[0], img.shape[1], 3))*255
             cv2.fillPoly(mask, [points], (palette[3*i+2], palette[3*i+1], palette[3*i]))
-            cv2.addWeighted(img, 0.4, mask, 0.1, 0)
-            cv2.imwrite('1.png', img)
-    return
+            if weighted_img is None:
+                weighted_img = cv2.addWeighted(img, 0.5, mask.astype('uint8'), 0.5, 0)
+            else:
+                weighted_img = cv2.addWeighted(weighted_img, 0.5, mask.astype('uint8'), 0.5, 0)
+    return weighted_img
 
 def colorize_mask(mask):
     new_mask = Image.fromarray(mask.astype(np.uint8)).convert('P')
