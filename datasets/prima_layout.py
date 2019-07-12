@@ -14,7 +14,6 @@ def colorize_mask(mask):
     new_mask.putpalette(palette)
     return new_mask
 
-
 class PRIMA(data.Dataset):
     def __init__(self, mode, joint_transform=None, sliding_crop=None, transform=None, target_transform=None):
         self.mode = mode
@@ -42,9 +41,6 @@ class PRIMA(data.Dataset):
 
         if self.sliding_crop is not None and self.mode == 'train':
             img_slices, mask_slices, slices_info = self.sliding_crop(img, mask)
-            import pdb; pdb.set_trace()
-            for i in range(len(img_slices)):
-                img_slices[i].save('./vis/'+str(i)+'.png')
 
             if self.transform is not None:
                 img_slices = [self.transform(e) for e in img_slices]

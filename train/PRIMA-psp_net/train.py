@@ -32,6 +32,7 @@ writer = SummaryWriter(os.path.join(ckpt_path, 'exp', exp_name))
 args = {
     'epoch_num': 100,
     'lr': 1e-4,
+    'longer_size': 1500,
     'crop_size': 700,
     'stride_rate': 1 / 2.,
     'weight_decay': 1e-3,
@@ -70,16 +71,16 @@ def main(train_args):
     mean_std = ([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 
     train_joint_transform = joint_transforms.Compose([
-        # joint_transforms.Scale(short_size),
-        joint_transforms.Scale(1500),
-        joint_transforms.RandomCrop((1500, 1100)),
+        joint_transforms.Scale(args['longer_size']),
+        joint_transforms.RandomCrop((args['longer_size'], args['longer_size'])),
         joint_transforms.RandomHorizontallyFlip()
     ])
-    sliding_crop = joint_transforms.SlidingCrop(args['crop_size'], args['stride_rate'], ignore_label=255)
     val_joint_transform = joint_transforms.Compose([
-    joint_transforms.Scale(1500),   
-    joint_transforms.RandomCrop((1500, 1100))
+    joint_transforms.Scale(args['longer_size']),   
     ])
+
+    sliding_crop = joint_transforms.SlidingCrop(args['crop_size'], args['stride_rate'], ignore_label=255)
+
     input_transform = standard_transforms.Compose([
         standard_transforms.ToTensor(),
         standard_transforms.Normalize(*mean_std)
@@ -100,7 +101,7 @@ def main(train_args):
     train_loader = DataLoader(train_set, batch_size=1, num_workers=0, shuffle=True)
     val_set = PRIMA('val', joint_transform=val_joint_transform, sliding_crop=sliding_crop,
                     transform=input_transform, target_transform=target_transform)
-    val_loader = DataLoader(val_set, batch_size=4, num_workers=4, shuffle=False)
+    val_loader = DataLoader(val_set, batch_size=1, num_workers=0, shuffle=False)
 
     # solved unbalanced distribution
     weights = [1/6, 2/6, 1/2]
@@ -125,12 +126,13 @@ def main(train_args):
     # scheduler = ReduceLROnPlateau(optimizer, 'min', patience=train_args['lr_patience'], min_lr=1e-10, verbose=True)
     scheduler = MultiStepLR(optimizer, milestones=[15, 30, 45, 60], gamma=0.1)
     for epoch in range(curr_epoch, train_args['epoch_num'] + 1):
-        train(train_loader, net, criterion, optimizer, epoch, train_args)
-        if epoch%2==0:
-            validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
-        scheduler.step()
+        validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
 
-        #validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
+        # train(train_loader, net, criterion, optimizer, epoch, train_args)
+        # if epoch%2==0:
+        #     validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
+        # scheduler.step()
+
 
 def train(train_loader, net, criterion, optimizer, epoch, train_args):
     train_main_loss = AverageMeter()
@@ -138,7 +140,6 @@ def train(train_loader, net, criterion, optimizer, epoch, train_args):
     curr_iter = (epoch - 1) * len(train_loader)
     for i, data in enumerate(train_loader):
         inputs, gts, _ = data
-        import pdb; pdb.set_trace()
         assert len(inputs.size()) == 5 and len(gts.size()) == 4
         inputs.transpose_(0, 1)
         gts.transpose_(0, 1)
@@ -177,28 +178,47 @@ def train(train_loader, net, criterion, optimizer, epoch, train_args):
 
 def validate(val_loader, net, criterion, optimizer, epoch, train_args, restore, visualize):
     net.eval()
-
     val_loss = AverageMeter()
-    inputs_all, gts_all, predictions_all = [], [], []
 
+    gts_all = np.zeros((len(val_loader), args['longer_size'], 2 * args['longer_size']), dtype=int)
+    predictions_all = np.zeros((len(val_loader), args['longer_size'], 2 * args['longer_size']), dtype=int)
     for vi, data in enumerate(val_loader):
-        inputs, gts = data
-        N = inputs.size(0)
-        inputs = Variable(inputs, volatile=True).cuda()
-        gts = Variable(gts, volatile=True).cuda()
+        input, gt, slices_info = data
+        assert len(input.size()) == 5 and len(gt.size()) == 4 and len(slices_info.size()) == 3
+        input.transpose_(0, 1)
+        gt.transpose_(0, 1)
+        slices_info.squeeze_(0)
+        assert input.size()[3:] == gt.size()[2:]
 
-        outputs = net(inputs)
-        predictions = outputs.data.max(1)[1].squeeze_(1).squeeze_(0).cpu().numpy()
- 
-        val_loss.update(criterion(outputs, gts).data[0] / N, N)
+        import pdb; pdb.set_trace()
+        count = torch.zeros(args['longer_size'], 2 * args['longer_size']).cuda()
+        output = torch.zeros(voc.num_classes, args['longer_size'], 2 * args['longer_size']).cuda()
 
-        if random.random() > train_args['val_img_sample_rate']:
-            inputs_all.append(None)
-        else:
-            inputs_all.append(inputs.data.squeeze_(0).cpu())
-        gts_all.append(gts.data.squeeze_(0).cpu().numpy())
-        predictions_all.append(predictions)
+        slice_batch_pixel_size = input.size(1) * input.size(3) * input.size(4)
 
+        for input_slice, gt_slice, info in zip(input, gt, slices_info):
+            input_slice = Variable(input_slice).cuda()
+            gt_slice = Variable(gt_slice).cuda()
+
+            output_slice = net(input_slice)
+            assert output_slice.size()[2:] == gt_slice.size()[1:]
+            assert output_slice.size()[1] == voc.num_classes
+            output[:, info[0]: info[1], info[2]: info[3]] += output_slice[0, :, :info[4], :info[5]].data
+            gts_all[vi, info[0]: info[1], info[2]: info[3]] += gt_slice[0, :info[4], :info[5]].data.cpu().numpy()
+
+            count[info[0]: info[1], info[2]: info[3]] += 1
+
+            val_loss.update(criterion(output_slice, gt_slice).data[0], slice_batch_pixel_size)
+
+        output /= count
+        gts_all[vi, :, :] /= count.cpu().numpy().astype(int)
+        predictions_all[vi, :, :] = output.max(0)[1].squeeze_(0).cpu().numpy()
+
+        print('validating: %d / %d' % (vi + 1, len(val_loader)))
+
+
+
+        # visualize output result
         if train_args['val_save_to_img_file']:
             for i in range(predictions.shape[0]):
                 weighted_img = overlay_mask(restore(inputs[i].cpu()), predictions[i])
