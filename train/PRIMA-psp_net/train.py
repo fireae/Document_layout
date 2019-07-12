@@ -137,26 +137,33 @@ def train(train_loader, net, criterion, optimizer, epoch, train_args):
     train_aux_loss = AverageMeter()
     curr_iter = (epoch - 1) * len(train_loader)
     for i, data in enumerate(train_loader):
+        inputs, gts, _ = data
         import pdb; pdb.set_trace()
-        inputs, labels = data
-        assert inputs.size()[2:] == labels.size()[1:]
-        N = inputs.size(0)
-        inputs = Variable(inputs).cuda()
-        labels = Variable(labels).cuda()
+        assert len(inputs.size()) == 5 and len(gts.size()) == 4
+        inputs.transpose_(0, 1)
+        gts.transpose_(0, 1)
 
-        optimizer.zero_grad()
-        outputs, aux = net(inputs)
-        assert outputs.size()[2:] == labels.size()[1:]
-        assert outputs.size()[1] == num_classes
+        assert inputs.size()[3:] == gts.size()[2:]
+        slice_batch_pixel_size = inputs.size(1) * inputs.size(3) * inputs.size(4)
 
-        main_loss = criterion(outputs, labels)
-        aux_loss = criterion(aux, labels)
-        loss = main_loss + 0.4 * aux_loss
-        loss.backward()
-        optimizer.step()
+        for inputs_slice, gts_slice in zip(inputs, gts):
+            inputs_slice = Variable(inputs_slice).cuda()
+            gts_slice = Variable(gts_slice).cuda()
 
-        train_main_loss.update(main_loss.data[0], N)
-        train_aux_loss.update(aux_loss.data[0], N)
+            optimizer.zero_grad()
+            outputs, aux = net(inputs_slice)
+            assert outputs.size()[2:] == gts_slice.size()[1:]
+            assert outputs.size()[1] == num_classes
+
+            main_loss = criterion(outputs, gts_slice)
+            aux_loss = criterion(aux, gts_slice)
+            loss = main_loss + 0.4 * aux_loss
+            loss.backward()
+            optimizer.step()
+
+            train_main_loss.update(main_loss.data[0], slice_batch_pixel_size)
+            train_aux_loss.update(aux_loss.data[0], slice_batch_pixel_size)
+
 
         curr_iter += 1
         writer.add_scalar('train_main_loss', train_main_loss.avg, curr_iter)
