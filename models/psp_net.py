@@ -25,6 +25,7 @@ class _PyramidPoolingModule(nn.Module):
         x_size = x.size()
         out = [x]
         for f in self.features:
+            import pdb; pdb.set_trace()
             out.append(F.upsample(f(x), x_size[2:], mode='bilinear'))
         out = torch.cat(out, 1)
         return out
@@ -70,6 +71,7 @@ class PSPNet(nn.Module):
 
     def forward(self, x):
         x_size = x.size()
+        import pdb; pdb.set_trace()
         x = self.layer0(x)
         x = self.layer1(x)
         x = self.layer2(x)

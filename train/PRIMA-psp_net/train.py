@@ -50,8 +50,8 @@ def init_palette():
 palette = init_palette()
 
 def main(train_args):
-    # net = PSPNet(num_classes).cuda()
-    net = nn.DataParallel(PSPNet(num_classes)).cuda()
+    net = PSPNet(num_classes).cuda()
+    # net = nn.DataParallel(PSPNet(num_classes)).cuda()
     if len(train_args['snapshot']) == 0:
         curr_epoch = 1
         train_args['best_record'] = {'epoch': 0, 'val_loss': 1e10, 'acc': 0, 'acc_cls': 0, 'mean_iu': 0, 'fwavacc': 0}
@@ -69,8 +69,8 @@ def main(train_args):
 
     train_joint_transform = joint_transforms.Compose([
         # joint_transforms.Scale(short_size),
-        joint_transforms.Scale(1500),
-        joint_transforms.RandomCrop((1500, 1100)),
+        joint_transforms.Scale(200),
+        joint_transforms.RandomCrop((200, 100)),
         joint_transforms.RandomHorizontallyFlip()
     ])
     val_joint_transform = joint_transforms.Compose([
@@ -93,7 +93,7 @@ def main(train_args):
     ])
 
     train_set = PRIMA('train', joint_transform=train_joint_transform, transform=input_transform, target_transform=target_transform)
-    train_loader = DataLoader(train_set, batch_size=4, num_workers=4, shuffle=True)
+    train_loader = DataLoader(train_set, batch_size=2, num_workers=0, shuffle=True)
     val_set = PRIMA('val', joint_transform=val_joint_transform, transform=input_transform, target_transform=target_transform)
     val_loader = DataLoader(val_set, batch_size=4, num_workers=4, shuffle=False)
 
@@ -139,7 +139,7 @@ def train(train_loader, net, criterion, optimizer, epoch, train_args):
         labels = Variable(labels).cuda()
 
         optimizer.zero_grad()
-        outputs, aux = net(inputs_slice)
+        outputs, aux = net(inputs)
         assert outputs.size()[2:] == labels.size()[1:]
         assert outputs.size()[1] == num_classes
 
