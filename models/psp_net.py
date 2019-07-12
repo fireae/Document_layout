@@ -70,7 +70,6 @@ class PSPNet(nn.Module):
 
     def forward(self, x):
         x_size = x.size()
-        import pdb; pdb.set_trace()
         x = self.layer0(x)
         x = self.layer1(x)
         x = self.layer2(x)
