@@ -5,6 +5,16 @@ import torch
 from PIL import Image
 from torch.utils import data
 
+def colorize_mask(mask):
+    palette = [0,0,0, 64,128,64, 128,0,192]
+    zero_pad = 256 * 3 - len(palette)
+    for i in range(zero_pad):
+        palette.append(0)
+    new_mask = Image.fromarray(mask.astype(np.uint8)).convert('P')
+    new_mask.putpalette(palette)
+    return new_mask
+
+
 class PRIMA(data.Dataset):
     def __init__(self, mode, joint_transform=None, sliding_crop=None, transform=None, target_transform=None):
         self.mode = mode
@@ -32,9 +42,9 @@ class PRIMA(data.Dataset):
 
         if self.sliding_crop is not None and self.mode == 'train':
             img_slices, mask_slices, slices_info = self.sliding_crop(img, mask)
+            import pdb; pdb.set_trace()
             for i in range(len(img_slices)):
                 img_slices[i].save('./vis/'+str(i)+'.png')
-            import pdb; pdb.set_trace()
 
             if self.transform is not None:
                 img_slices = [self.transform(e) for e in img_slices]

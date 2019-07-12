@@ -32,8 +32,8 @@ writer = SummaryWriter(os.path.join(ckpt_path, 'exp', exp_name))
 args = {
     'epoch_num': 100,
     'lr': 1e-4,
-    'crop_size': 473,
-    'stride_rate': 1 / 3.,
+    'crop_size': 700,
+    'stride_rate': 1 / 2.,
     'weight_decay': 1e-3,
     'momentum': 0.95,
     'snapshot': '',  # empty string denotes learning from scratch
