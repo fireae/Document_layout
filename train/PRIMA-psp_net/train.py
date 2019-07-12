@@ -75,7 +75,7 @@ def main(train_args):
         joint_transforms.RandomCrop((1500, 1100)),
         joint_transforms.RandomHorizontallyFlip()
     ])
-    sliding_crop = joint_transforms.Sliding_Crop(args['crop_size'], args['stride_rate'], ignore_label=255)
+    sliding_crop = joint_transforms.SlidingCrop(args['crop_size'], args['stride_rate'], ignore_label=255)
     val_joint_transform = joint_transforms.Compose([
     joint_transforms.Scale(1500),   
     joint_transforms.RandomCrop((1500, 1100))
@@ -95,9 +95,11 @@ def main(train_args):
         standard_transforms.ToTensor()
     ])
 
-    train_set = PRIMA('train', joint_transform=train_joint_transform, transform=input_transform, target_transform=target_transform)
-    train_loader = DataLoader(train_set, batch_size=2, num_workers=0, shuffle=True)
-    val_set = PRIMA('val', joint_transform=val_joint_transform, transform=input_transform, target_transform=target_transform)
+    train_set = PRIMA('train', joint_transform=train_joint_transform, sliding_crop=sliding_crop,
+                    transform=input_transform, target_transform=target_transform)
+    train_loader = DataLoader(train_set, batch_size=1, num_workers=0, shuffle=True)
+    val_set = PRIMA('val', joint_transform=val_joint_transform, sliding_crop=sliding_crop,
+                    transform=input_transform, target_transform=target_transform)
     val_loader = DataLoader(val_set, batch_size=4, num_workers=4, shuffle=False)
 
     # solved unbalanced distribution
