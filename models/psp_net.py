@@ -34,7 +34,8 @@ class PSPNet(nn.Module):
     def __init__(self, num_classes, pretrained=True, use_aux=True):
         super(PSPNet, self).__init__()
         self.use_aux = use_aux
-        resnet = models.resnet101()
+        # resnet = models.resnet101()
+        resnet = models.resnet50()
         if pretrained:
             # resnet.load_state_dict(torch.load(res101_path))
             resnet.load_state_dict(torch.load(res50_path))

@@ -41,9 +41,7 @@ args = {
 }
 
 def init_palette():
-    palette = [0,0,0, 64,128,64, 128,0,192, 192,128,0, 64,128,0,
-            0,0,128, 128,0,64, 192,0,64, 64,128,192, 128,192,192,
-            128,64,64]
+    palette = [0,0,0, 64,128,64, 128,0,192]
     zero_pad = 256 * 3 - len(palette)
     for i in range(zero_pad):
         palette.append(0)
@@ -77,7 +75,7 @@ def main(train_args):
     ])
     val_joint_transform = joint_transforms.Compose([
     joint_transforms.Scale(1500),   
-    joint_transforms.RandomCrop((1100, 1500))
+    joint_transforms.RandomCrop((1500, 1100))
     ])
     input_transform = standard_transforms.Compose([
         standard_transforms.ToTensor(),
@@ -122,11 +120,12 @@ def main(train_args):
     # scheduler = ReduceLROnPlateau(optimizer, 'min', patience=train_args['lr_patience'], min_lr=1e-10, verbose=True)
     scheduler = MultiStepLR(optimizer, milestones=[15, 30, 45, 60], gamma=0.1)
     for epoch in range(curr_epoch, train_args['epoch_num'] + 1):
-        #validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
         train(train_loader, net, criterion, optimizer, epoch, train_args)
         if epoch%2==0:
             validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
-        #scheduler.step()
+        scheduler.step()
+
+        #validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
 
 def train(train_loader, net, criterion, optimizer, epoch, train_args):
     train_main_loss = AverageMeter()
