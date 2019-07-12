@@ -30,8 +30,8 @@ num_classes = 3
 writer = SummaryWriter(os.path.join(ckpt_path, 'exp', exp_name))
 
 args = {
-    'epoch_num': 100,
-    'lr': 1e-4,
+    'epoch_num': 50,
+    'lr': 1e-2,
     'longer_size': 1500,
     'crop_size': 700,
     'stride_rate': 1 / 2.,
@@ -53,8 +53,8 @@ def init_palette():
 palette = init_palette()
 
 def main(train_args):
-    net = PSPNet(num_classes).cuda()
-    # net = nn.DataParallel(PSPNet(num_classes)).cuda()
+    # net = PSPNet(num_classes).cuda()
+    net = nn.DataParallel(PSPNet(num_classes)).cuda()
     if len(train_args['snapshot']) == 0:
         curr_epoch = 1
         train_args['best_record'] = {'epoch': 0, 'val_loss': 1e10, 'acc': 0, 'acc_cls': 0, 'mean_iu': 0, 'fwavacc': 0}
@@ -76,7 +76,7 @@ def main(train_args):
         joint_transforms.RandomHorizontallyFlip()
     ])
     val_joint_transform = joint_transforms.Compose([
-    joint_transforms.Scale(args['longer_size']),   
+    joint_transforms.Scale(args['longer_size']),
     ])
 
     sliding_crop = joint_transforms.SlidingCrop(args['crop_size'], args['stride_rate'], ignore_label=255)
@@ -98,13 +98,13 @@ def main(train_args):
 
     train_set = PRIMA('train', joint_transform=train_joint_transform, sliding_crop=sliding_crop,
                     transform=input_transform, target_transform=target_transform)
-    train_loader = DataLoader(train_set, batch_size=1, num_workers=0, shuffle=True)
-    val_set = PRIMA('val', joint_transform=val_joint_transform, sliding_crop=sliding_crop,
+    train_loader = DataLoader(train_set, batch_size=8, num_workers=4, shuffle=True)
+    val_set = PRIMA('val', sliding_crop=sliding_crop,
                     transform=input_transform, target_transform=target_transform)
-    val_loader = DataLoader(val_set, batch_size=1, num_workers=0, shuffle=False)
+    val_loader = DataLoader(val_set, batch_size=1, num_workers=4, shuffle=False)
 
     # solved unbalanced distribution
-    weights = [1/6, 2/6, 1/2]
+    weights = [1/6, 2/6, 3/6]
     cls_weights = torch.FloatTensor(weights).cuda()
     criterion = CrossEntropyLoss2d(weight=cls_weights, size_average=True).cuda()
     optimizer = optim.Adam([
@@ -124,14 +124,14 @@ def main(train_args):
     open(os.path.join(ckpt_path, exp_name, str(datetime.datetime.now()) + '.txt'), 'w').write(str(train_args) + '\n\n')
 
     # scheduler = ReduceLROnPlateau(optimizer, 'min', patience=train_args['lr_patience'], min_lr=1e-10, verbose=True)
-    scheduler = MultiStepLR(optimizer, milestones=[15, 30, 45, 60], gamma=0.1)
+    scheduler = MultiStepLR(optimizer, milestones=[10, 20, 30, 40], gamma=0.1)
     for epoch in range(curr_epoch, train_args['epoch_num'] + 1):
-        validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
+        # validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
 
-        # train(train_loader, net, criterion, optimizer, epoch, train_args)
-        # if epoch%2==0:
-        #     validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
-        # scheduler.step()
+        train(train_loader, net, criterion, optimizer, epoch, train_args)
+        if epoch%5==0:
+            validate(val_loader, net, criterion, optimizer, epoch, train_args, restore_transform, visualize)
+        scheduler.step()
 
 
 def train(train_loader, net, criterion, optimizer, epoch, train_args):
@@ -165,7 +165,6 @@ def train(train_loader, net, criterion, optimizer, epoch, train_args):
             train_main_loss.update(main_loss.data[0], slice_batch_pixel_size)
             train_aux_loss.update(aux_loss.data[0], slice_batch_pixel_size)
 
-
         curr_iter += 1
         writer.add_scalar('train_main_loss', train_main_loss.avg, curr_iter)
         writer.add_scalar('train_aux_loss', train_aux_loss.avg, curr_iter)
@@ -177,11 +176,12 @@ def train(train_loader, net, criterion, optimizer, epoch, train_args):
                 optimizer.param_groups[1]['lr']))
 
 def validate(val_loader, net, criterion, optimizer, epoch, train_args, restore, visualize):
+    # only validate when batch_size==1
     net.eval()
     val_loss = AverageMeter()
 
-    gts_all = np.zeros((len(val_loader), args['longer_size'], 2 * args['longer_size']), dtype=int)
-    predictions_all = np.zeros((len(val_loader), args['longer_size'], 2 * args['longer_size']), dtype=int)
+    gts_all, predictions_all = [], []
+
     for vi, data in enumerate(val_loader):
         input, gt, slices_info = data
         assert len(input.size()) == 5 and len(gt.size()) == 4 and len(slices_info.size()) == 3
@@ -190,9 +190,11 @@ def validate(val_loader, net, criterion, optimizer, epoch, train_args, restore, 
         slices_info.squeeze_(0)
         assert input.size()[3:] == gt.size()[2:]
 
-        import pdb; pdb.set_trace()
-        count = torch.zeros(args['longer_size'], 2 * args['longer_size']).cuda()
-        output = torch.zeros(voc.num_classes, args['longer_size'], 2 * args['longer_size']).cuda()
+        img_h = slices_info[-1,0].item() + slices_info[-1,4].item()
+        img_w = slices_info[-1,2].item() + slices_info[-1,5].item()
+        count = torch.zeros(img_h, img_w).cuda()
+        output = torch.zeros(num_classes, img_h, img_w).cuda()
+        img_gt = np.zeros((img_h, img_w))
 
         slice_batch_pixel_size = input.size(1) * input.size(3) * input.size(4)
 
@@ -202,32 +204,31 @@ def validate(val_loader, net, criterion, optimizer, epoch, train_args, restore, 
 
             output_slice = net(input_slice)
             assert output_slice.size()[2:] == gt_slice.size()[1:]
-            assert output_slice.size()[1] == voc.num_classes
-            output[:, info[0]: info[1], info[2]: info[3]] += output_slice[0, :, :info[4], :info[5]].data
-            gts_all[vi, info[0]: info[1], info[2]: info[3]] += gt_slice[0, :info[4], :info[5]].data.cpu().numpy()
+            assert output_slice.size()[1] == num_classes
 
-            count[info[0]: info[1], info[2]: info[3]] += 1
+            output[:, info[0]: info[0]+info[4], info[2]: info[2]+info[5]] += output_slice[0, :, :info[4], :info[5]].data
+            count[info[0]: info[0]+info[4], info[2]: info[2]+info[5]] += 1
+            img_gt[info[0]: info[0]+info[4], info[2]: info[2]+info[5]] += gt_slice[0, :info[4], :info[5]].data.cpu().numpy()
 
             val_loss.update(criterion(output_slice, gt_slice).data[0], slice_batch_pixel_size)
 
         output /= count
-        gts_all[vi, :, :] /= count.cpu().numpy().astype(int)
-        predictions_all[vi, :, :] = output.max(0)[1].squeeze_(0).cpu().numpy()
+        prediction = output.max(0)[1].squeeze_(0).cpu().numpy()
+        gts_all.append(img_gt/count.cpu().numpy().astype(int))
+        predictions_all.append(prediction)
 
         print('validating: %d / %d' % (vi + 1, len(val_loader)))
 
-
-
         # visualize output result
-        if train_args['val_save_to_img_file']:
-            for i in range(predictions.shape[0]):
-                weighted_img = overlay_mask(restore(inputs[i].cpu()), predictions[i])
-                cv2.imwrite('./vis/'+str(vi*predictions.shape[0]+i)+'.png', weighted_img)
+        # if train_args['val_save_to_img_file']:
+        #     for i in range(predictions.shape[0]):
+        #         weighted_img = overlay_mask(restore(inputs[i].cpu()), predictions[i])
+        #         cv2.imwrite('./vis/'+str(vi*predictions.shape[0]+i)+'.png', weighted_img)
 
-            #     pred_pil = colorize_mask(predictions[i])
-            #     pred_pil.save('./pred/'+str(vi*predictions.shape[0]+i)+'.png')
-            #     gt_pil = colorize_mask(gts.data.cpu().numpy()[i])
-            #     gt_pil.save('./gts/'+str(vi*predictions.shape[0]+i)+'.png')
+        #         pred_pil = colorize_mask(predictions[i])
+        #         pred_pil.save('./pred/'+str(vi*predictions.shape[0]+i)+'.png')
+        #         gt_pil = colorize_mask(gts.data.cpu().numpy()[i])
+        #         gt_pil.save('./gts/'+str(vi*predictions.shape[0]+i)+'.png')
 
     acc, acc_cls, mean_iu, fwavacc = evaluate(predictions_all, gts_all, num_classes)
 
@@ -243,27 +244,6 @@ def validate(val_loader, net, criterion, optimizer, epoch, train_args, restore, 
         )
         torch.save(net.state_dict(), os.path.join(ckpt_path, exp_name, snapshot_name + '.pth'))
         torch.save(optimizer.state_dict(), os.path.join(ckpt_path, exp_name, 'opt_' + snapshot_name + '.pth'))
-
-        # if train_args['val_save_to_img_file']:
-        #     to_save_dir = os.path.join(ckpt_path, exp_name, str(epoch))
-        #     check_mkdir(to_save_dir)
-
-        # val_visual = []
-        # for idx, data in enumerate(zip(inputs_all, gts_all, predictions_all)):
-        #     if data[0] is None:
-        #         continue
-        #     input_pil = restore(data[0])
-        #     gt_pil = colorize_mask(data[1])
-        #     predictions_pil = colorize_mask(data[2])
-        #     if train_args['val_save_to_img_file']:
-        #         input_pil.save(os.path.join(to_save_dir, '%d_input.png' % idx))
-        #         predictions_pil.save(os.path.join(to_save_dir, '%d_prediction.png' % idx))
-        #         gt_pil.save(os.path.join(to_save_dir, '%d_gt.png' % idx))
-        #     val_visual.extend([visualize(input_pil.convert('RGB')), visualize(gt_pil.convert('RGB')),
-        #                        visualize(predictions_pil.convert('RGB'))])
-        # val_visual = torch.stack(val_visual, 0)
-        # val_visual = vutils.make_grid(val_visual, nrow=3, padding=5)
-        # writer.add_image(snapshot_name, val_visual)
 
     print('--------------------------------------------------------------------')
     print('[epoch %d], [val loss %.5f], [acc %.5f], [acc_cls %.5f], [mean_iu %.5f], [fwavacc %.5f]' % (
@@ -287,7 +267,7 @@ def validate(val_loader, net, criterion, optimizer, epoch, train_args, restore, 
 def overlay_mask(pilimage, pred):
     img = np.array(pilimage)
     weighted_img = None
-    for i in range(12):
+    for i in range(num_classes):
         points = np.where(pred==i)
         points = np.concatenate([points[1][:, np.newaxis], points[0][:, np.newaxis]], 1)
         if points.shape[0]>0:
