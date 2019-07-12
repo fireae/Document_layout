@@ -23,7 +23,7 @@ class PRIMA(data.Dataset):
 
     def __getitem__(self, index):
         img_path = os.path.join(self.img_base_dir, self.files[index])
-        mask_path = img_path.replace("Images", "masks").replace("tif", "png")
+        mask_path = img_path.replace("Images", "3_cls_mask").replace("tif", "png")
 
         img = Image.open(img_path).convert('RGB')
         mask = Image.open(mask_path)

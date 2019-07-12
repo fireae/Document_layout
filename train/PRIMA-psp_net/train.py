@@ -75,7 +75,7 @@ def main(train_args):
         joint_transforms.RandomCrop((1500, 1100)),
         joint_transforms.RandomHorizontallyFlip()
     ])
-    sliding_crop = joint_transforms.Sliding_crop(args['crop_size'], args['stride_rate'])
+    sliding_crop = joint_transforms.Sliding_Crop(args['crop_size'], args['stride_rate'], ignore_label=255)
     val_joint_transform = joint_transforms.Compose([
     joint_transforms.Scale(1500),   
     joint_transforms.RandomCrop((1500, 1100))
