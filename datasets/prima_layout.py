@@ -29,9 +29,13 @@ class PRIMA(data.Dataset):
         mask = Image.open(mask_path)
         if self.joint_transform is not None:
             img, mask = self.joint_transform(img, mask)
-        
+
         if self.sliding_crop is not None and self.mode == 'train':
             img_slices, mask_slices, slices_info = self.sliding_crop(img, mask)
+            for i in range(len(img_slices)):
+                img_slices[i].save('./vis/'+str(i)+'.png')
+            import pdb; pdb.set_trace()
+
             if self.transform is not None:
                 img_slices = [self.transform(e) for e in img_slices]
             if self.target_transform is not None:
