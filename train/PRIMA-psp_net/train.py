@@ -192,7 +192,7 @@ def validate(val_loader, net, criterion, optimizer, epoch, train_args, restore, 
 
         import pdb; pdb.set_trace()
         count = torch.zeros(args['longer_size'], 2 * args['longer_size']).cuda()
-        output = torch.zeros(voc.num_classes, args['longer_size'], 2 * args['longer_size']).cuda()
+        output = torch.zeros(num_classes, args['longer_size'], 2 * args['longer_size']).cuda()
 
         slice_batch_pixel_size = input.size(1) * input.size(3) * input.size(4)
 

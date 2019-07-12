@@ -39,7 +39,7 @@ class PRIMA(data.Dataset):
         if self.joint_transform is not None:
             img, mask = self.joint_transform(img, mask)
 
-        if self.sliding_crop is not None and self.mode == 'train':
+        if self.sliding_crop is not None:
             img_slices, mask_slices, slices_info = self.sliding_crop(img, mask)
 
             if self.transform is not None:
