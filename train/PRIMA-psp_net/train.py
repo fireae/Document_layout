@@ -32,6 +32,8 @@ writer = SummaryWriter(os.path.join(ckpt_path, 'exp', exp_name))
 args = {
     'epoch_num': 100,
     'lr': 1e-4,
+    'crop_size': 473,
+    'stride_rate': 1 / 3.,
     'weight_decay': 1e-3,
     'momentum': 0.95,
     'snapshot': '',  # empty string denotes learning from scratch
@@ -69,10 +71,11 @@ def main(train_args):
 
     train_joint_transform = joint_transforms.Compose([
         # joint_transforms.Scale(short_size),
-        joint_transforms.Scale(200),
-        joint_transforms.RandomCrop((200, 100)),
+        joint_transforms.Scale(1500),
+        joint_transforms.RandomCrop((1500, 1100)),
         joint_transforms.RandomHorizontallyFlip()
     ])
+    sliding_crop = joint_transforms.Sliding_crop(args['crop_size'], args['stride_rate'])
     val_joint_transform = joint_transforms.Compose([
     joint_transforms.Scale(1500),   
     joint_transforms.RandomCrop((1500, 1100))
@@ -132,6 +135,7 @@ def train(train_loader, net, criterion, optimizer, epoch, train_args):
     train_aux_loss = AverageMeter()
     curr_iter = (epoch - 1) * len(train_loader)
     for i, data in enumerate(train_loader):
+        import pdb; pdb.set_trace()
         inputs, labels = data
         assert inputs.size()[2:] == labels.size()[1:]
         N = inputs.size(0)
