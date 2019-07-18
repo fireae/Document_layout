@@ -22,14 +22,9 @@ from utils import check_mkdir, evaluate, AverageMeter, CrossEntropyLoss2d
 import os
 os.environ["CUDA_VISIBLE_DEVICES"]="4,5,6,7"
 
-cudnn.benchmark = True
-
-ckpt_path = '../../ckpt'
-exp_name = 'PRIMA-pspnet-balanced'
-num_classes = 3
-writer = SummaryWriter(os.path.join(ckpt_path, 'exp', exp_name))
 
 train_args = {
+    'train_args['num_classes']': 3,
     'epoch_num': 50,
     'lr': 1e-2,
     'longer_size': 1500,
@@ -42,6 +37,16 @@ train_args = {
     'val_save_to_img_file': False,
     'val_img_sample_rate': 0.1  # randomly sample some validation results to display
 }
+ckpt_path = '../../ckpt'
+exp_name = 'PRIMA-pspnet-balanced'
+writer = SummaryWriter(os.path.join(ckpt_path, 'exp', exp_name))
+
+torch.cuda.set_device(args.local_rank)
+cudnn.benchmark = True
+
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('--local_rank', type=int, default=0)
 
 def init_palette():
     palette = [0,0,0, 64,128,64, 128,0,192]
@@ -53,8 +58,27 @@ def init_palette():
 palette = init_palette()
 
 def main(train_args):
-    # net = PSPNet(num_classes).cuda()
-    net = nn.DataParallel(PSPNet(num_classes)).cuda()
+    torch.cuda.set_device(args.local_rank)
+    device = torch.cuda.set_device(args.local_rank)
+
+    world_size = args.ngpu
+    torch.distributed.init_process_group(
+    'nccl',
+    init_method='env://',
+    world_size=world_size,
+    rank=args.local_rank,
+    )
+
+    net = PSPNet(train_args['num_classes'])
+    # net = nn.DataParallel(PSPNet(train_args['num_classes'])).cuda()
+    net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
+    net = net.to(device)
+    net = torch.nn.parallel.DistributedDataParallel(
+        net,
+        device_ids=[args.local_rank],
+        output_device=args.local_rank,
+    )
+
     if len(train_args['snapshot']) == 0:
         curr_epoch = 1
         train_args['best_record'] = {'epoch': 0, 'val_loss': 1e10, 'acc': 0, 'acc_cls': 0, 'mean_iu': 0, 'fwavacc': 0}
@@ -98,15 +122,36 @@ def main(train_args):
 
     train_set = PRIMA('train', joint_transform=train_joint_transform, sliding_crop=sliding_crop,
                     transform=input_transform, target_transform=target_transform)
-    train_loader = DataLoader(train_set, batch_size=8, num_workers=4, shuffle=True)
     val_set = PRIMA('val', sliding_crop=sliding_crop,
                     transform=input_transform, target_transform=target_transform)
-    val_loader = DataLoader(val_set, batch_size=1, num_workers=4, shuffle=False)
+    sampler = torch.utils.data.distributed.DistributedSampler(
+    train_set,
+    num_replicas=config.ngpu,
+    rank=local_rank,
+    )
+    train_loader = DataLoader(
+        dataset,
+        batch_size=8,
+        num_workers=8,
+        pin_memory=True,
+        sampler=sampler,
+        drop_last=True,
+    )
+    test_loader = DataLoader(
+        dataset,
+        batch_size=1,
+        num_workers=8,
+        pin_memory=True,
+        sampler=sampler,
+        drop_last=True,
+    )
+    print(len(train_loader))
 
     # solved unbalanced distribution
-    weights = [1/6, 2/6, 3/6]
-    cls_weights = torch.FloatTensor(weights).cuda()
-    criterion = CrossEntropyLoss2d(weight=cls_weights, size_average=True).cuda()
+    # weights = [1/6, 2/6, 3/6]
+    # cls_weights = torch.FloatTensor(weights).cuda()
+    # criterion = CrossEntropyLoss2d(weight=cls_weights, size_average=True).cuda()
+    criterion = CrossEntropyLoss2d(size_average=True).cuda()
     optimizer = optim.Adam([
         {'params': [param for name, param in net.named_parameters() if name[-4:] == 'bias'],
          'lr': 2 * train_args['lr']},
@@ -154,7 +199,7 @@ def train(train_loader, net, criterion, optimizer, epoch, train_args):
             optimizer.zero_grad()
             outputs, aux = net(inputs_slice)
             assert outputs.size()[2:] == gts_slice.size()[1:]
-            assert outputs.size()[1] == num_classes
+            assert outputs.size()[1] == train_args['num_classes']
 
             main_loss = criterion(outputs, gts_slice)
             aux_loss = criterion(aux, gts_slice)
@@ -193,7 +238,7 @@ def validate(val_loader, net, criterion, optimizer, epoch, train_args, restore, 
         img_h = slices_info[-1,0].item() + slices_info[-1,4].item()
         img_w = slices_info[-1,2].item() + slices_info[-1,5].item()
         count = torch.zeros(img_h, img_w).cuda()
-        output = torch.zeros(num_classes, img_h, img_w).cuda()
+        output = torch.zeros(train_args['num_classes'], img_h, img_w).cuda()
         img_gt = np.zeros((img_h, img_w))
 
         slice_batch_pixel_size = input.size(1) * input.size(3) * input.size(4)
@@ -204,7 +249,7 @@ def validate(val_loader, net, criterion, optimizer, epoch, train_args, restore, 
 
             output_slice = net(input_slice)
             assert output_slice.size()[2:] == gt_slice.size()[1:]
-            assert output_slice.size()[1] == num_classes
+            assert output_slice.size()[1] == train_args['num_classes']
 
             output[:, info[0]: info[0]+info[4], info[2]: info[2]+info[5]] += output_slice[0, :, :info[4], :info[5]].data
             count[info[0]: info[0]+info[4], info[2]: info[2]+info[5]] += 1
@@ -230,7 +275,7 @@ def validate(val_loader, net, criterion, optimizer, epoch, train_args, restore, 
         #         gt_pil = colorize_mask(gts.data.cpu().numpy()[i])
         #         gt_pil.save('./gts/'+str(vi*predictions.shape[0]+i)+'.png')
 
-    acc, acc_cls, mean_iu, fwavacc = evaluate(predictions_all, gts_all, num_classes)
+    acc, acc_cls, mean_iu, fwavacc = evaluate(predictions_all, gts_all, train_args['num_classes'])
 
     if mean_iu > train_args['best_record']['mean_iu']:
         train_args['best_record']['val_loss'] = val_loss.avg
@@ -267,7 +312,7 @@ def validate(val_loader, net, criterion, optimizer, epoch, train_args, restore, 
 def overlay_mask(pilimage, pred):
     img = np.array(pilimage)
     weighted_img = None
-    for i in range(num_classes):
+    for i in range(train_args['num_classes']):
         points = np.where(pred==i)
         points = np.concatenate([points[1][:, np.newaxis], points[0][:, np.newaxis]], 1)
         if points.shape[0]>0:
